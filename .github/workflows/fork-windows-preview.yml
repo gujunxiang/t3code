@@ -1,0 +1,123 @@
+name: Fork Windows Preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag, or commit to build
+        required: false
+        default: main
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  build_bundle:
+    name: Build JS bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      clerk_publishable_key: ${{ steps.config.outputs.clerk_publishable_key }}
+      clerk_jwt_template: ${{ steps.config.outputs.clerk_jwt_template }}
+      clerk_cli_oauth_client_id: ${{ steps.config.outputs.clerk_cli_oauth_client_id }}
+      relay_url: ${{ steps.config.outputs.relay_url }}
+      ref: ${{ steps.config.outputs.ref }}
+      version: ${{ steps.config.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ inputs.ref }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Resolve preview config
+        id: config
+        shell: bash
+        run: |
+          set -euo pipefail
+          env_example() { sed -n "s|^T3CODE_$1=||p" .env.example; }
+          echo "clerk_publishable_key=$(env_example CLERK_PUBLISHABLE_KEY)" >> "$GITHUB_OUTPUT"
+          echo "clerk_jwt_template=$(env_example CLERK_JWT_TEMPLATE)" >> "$GITHUB_OUTPUT"
+          echo "clerk_cli_oauth_client_id=$(env_example CLERK_CLI_OAUTH_CLIENT_ID)" >> "$GITHUB_OUTPUT"
+          echo "relay_url=$(sed -n 's|^T3CODE_RELAY_URL=||p' .env.example)" >> "$GITHUB_OUTPUT"
+          echo "ref=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "version=0.0.0-preview.$(date -u +%Y%m%d).${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup dependencies
+        uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
+
+      - name: Align package versions
+        run: node scripts/update-release-package-versions.ts "${{ steps.config.outputs.version }}"
+
+      - name: Build JS bundle
+        env:
+          T3CODE_CLERK_PUBLISHABLE_KEY: ${{ steps.config.outputs.clerk_publishable_key }}
+          T3CODE_CLERK_JWT_TEMPLATE: ${{ steps.config.outputs.clerk_jwt_template }}
+          T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ steps.config.outputs.clerk_cli_oauth_client_id }}
+          T3CODE_RELAY_URL: ${{ steps.config.outputs.relay_url }}
+          T3CODE_TELEMETRY_CHANNEL: dev
+        run: vp run build:desktop:bundle
+
+      - name: Upload JS bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: js-bundle
+          path: |
+            apps/server/dist
+            apps/desktop/dist-electron
+          if-no-files-found: error
+          retention-days: 1
+
+  desktop_linux_x64:
+    name: Build Linux x64
+    needs: [build_bundle]
+    uses: ./.github/workflows/release-desktop.yml
+    with:
+      version: ${{ needs.build_bundle.outputs.version }}
+      ref: ${{ needs.build_bundle.outputs.ref }}
+      release_channel: preview
+      relay_client_tracing: false
+      clerk_publishable_key: ${{ needs.build_bundle.outputs.clerk_publishable_key }}
+      clerk_jwt_template: ${{ needs.build_bundle.outputs.clerk_jwt_template }}
+      clerk_cli_oauth_client_id: ${{ needs.build_bundle.outputs.clerk_cli_oauth_client_id }}
+      relay_url: ${{ needs.build_bundle.outputs.relay_url }}
+      label: Linux x64
+      runner: ubuntu-24.04
+      platform: linux
+      target: AppImage
+      arch: x64
+      rust_target: x86_64-unknown-linux-gnu
+      resource_key: linux-x64
+      cli_archive: true
+      save_pnpm_store: false
+
+  desktop_win_x64:
+    name: Build Windows x64
+    needs: [build_bundle, desktop_linux_x64]
+    uses: ./.github/workflows/release-desktop.yml
+    with:
+      version: ${{ needs.build_bundle.outputs.version }}
+      ref: ${{ needs.build_bundle.outputs.ref }}
+      release_channel: preview
+      relay_client_tracing: false
+      clerk_publishable_key: ${{ needs.build_bundle.outputs.clerk_publishable_key }}
+      clerk_jwt_template: ${{ needs.build_bundle.outputs.clerk_jwt_template }}
+      clerk_cli_oauth_client_id: ${{ needs.build_bundle.outputs.clerk_cli_oauth_client_id }}
+      relay_url: ${{ needs.build_bundle.outputs.relay_url }}
+      label: Windows x64
+      runner: ubuntu-24.04
+      platform: win
+      target: nsis
+      arch: x64
+      rust_target: x86_64-pc-windows-msvc
+      resource_key: win-x64
+      cli_archive: true
+      verify_runner: windows-2025
+      save_pnpm_store: false

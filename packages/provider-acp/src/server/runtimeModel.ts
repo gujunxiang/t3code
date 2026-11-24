@@ -61,9 +61,12 @@ type AcpAgentTerminalUpdate = Extract<
   { readonly sessionUpdate: "terminal_update" | "terminal_output_chunk" }
 >;
 
-const MAX_ACP_TERMINAL_OUTPUT_BYTES = 16 * 1024 * 1024;
-const ACP_TERMINAL_OUTPUT_TRIM_BYTES = 1024 * 1024;
-const MAX_ACP_TERMINAL_FRAME_BYTES = MAX_ACP_TERMINAL_OUTPUT_BYTES;
+// CommandOutputHub reads the last 256 KiB; retain more so its display cut stays unchanged.
+export const MAX_AGENT_TERMINAL_OUTPUT_CHARS = 320 * 1024;
+// A UTF-16 code unit is at most 3 UTF-8 bytes, so the post-trim floor still holds the projected tail.
+const MAX_ACP_TERMINAL_OUTPUT_BYTES = 4 * MAX_AGENT_TERMINAL_OUTPUT_CHARS;
+const ACP_TERMINAL_OUTPUT_TRIM_BYTES = 256 * 1024;
+const MAX_ACP_TERMINAL_FRAME_BYTES = 16 * 1024 * 1024;
 
 function isBase64DataCode(code: number): boolean {
   return (
@@ -1647,10 +1650,19 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
     }
     case "usage_update": {
       const currency = upd.cost?.currency.trim().slice(0, 32);
+      const t3Meta = isRecord(upd._meta) ? upd._meta.t3 : undefined;
+      const percentageOnly = isRecord(t3Meta)
+        ? Option.getOrUndefined(
+            Schema.decodeUnknownOption(
+              Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 100 })),
+            )(t3Meta.usedPercentage),
+          )
+        : undefined;
       events.push({
         _tag: "UsageUpdated",
         usage: {
-          usedTokens: upd.used,
+          ...(percentageOnly === undefined ? { usedTokens: upd.used } : {}),
+          ...(percentageOnly === undefined ? {} : { usedPercentage: percentageOnly }),
           ...(upd.size > 0 ? { maxTokens: upd.size } : {}),
           ...(upd.cost && currency ? { cost: { amount: upd.cost.amount, currency } } : {}),
         },

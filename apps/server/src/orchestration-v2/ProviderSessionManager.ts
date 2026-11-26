@@ -317,6 +317,13 @@ export interface ProviderSessionManagerV2Shape {
   readonly subscribePromptSuggestion: (
     threadId: ThreadId,
   ) => Stream.Stream<OrchestrationV2PromptSuggestion>;
+  /** Records a predicted next prompt for the thread, optionally keeping an existing suggestion for the same run. */
+  readonly setPromptSuggestion: (input: {
+    readonly threadId: ThreadId;
+    readonly runId: RunId;
+    readonly text: string;
+    readonly overwrite?: boolean;
+  }) => Effect.Effect<void>;
 }
 
 export class ProviderSessionManagerV2 extends Context.Service<
@@ -483,6 +490,28 @@ export const layerWithOptions = (
       const promptSuggestionStore = yield* SubscriptionRef.make<
         ReadonlyMap<ThreadId, NonNullable<OrchestrationV2PromptSuggestion>>
       >(new Map());
+      const recordPromptSuggestion = (input: {
+        readonly threadId: ThreadId;
+        readonly runId: RunId;
+        readonly text: string;
+        readonly overwrite?: boolean;
+      }) =>
+        SubscriptionRef.update(promptSuggestionStore, (current) => {
+          if (input.overwrite === false && current.get(input.threadId)?.runId === input.runId) {
+            return current;
+          }
+          const next = new Map(current);
+          next.delete(input.threadId);
+          next.set(input.threadId, {
+            runId: input.runId,
+            text: input.text,
+          });
+          for (const threadId of next.keys()) {
+            if (next.size <= MAX_PROMPT_SUGGESTIONS) break;
+            next.delete(threadId);
+          }
+          return next;
+        });
       const idAllocator = yield* IdAllocator.IdAllocatorV2;
       const providerEventIngestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
@@ -3044,18 +3073,10 @@ export const layerWithOptions = (
               );
             }
             if (nativeEvent.type === "prompt_suggestion.updated") {
-              return SubscriptionRef.update(promptSuggestionStore, (current) => {
-                const next = new Map(current);
-                next.delete(nativeEvent.threadId);
-                next.set(nativeEvent.threadId, {
-                  runId: nativeEvent.runId,
-                  text: nativeEvent.text,
-                });
-                for (const threadId of next.keys()) {
-                  if (next.size <= MAX_PROMPT_SUGGESTIONS) break;
-                  next.delete(threadId);
-                }
-                return next;
+              return recordPromptSuggestion({
+                threadId: nativeEvent.threadId,
+                runId: nativeEvent.runId,
+                text: nativeEvent.text,
               });
             }
             const tracked = retryStalls.track(nativeEvent);
@@ -3739,6 +3760,7 @@ export const layerWithOptions = (
             ),
             Stream.changes,
           ),
+        setPromptSuggestion: recordPromptSuggestion,
       } satisfies ProviderSessionManagerV2Shape);
     }),
   );

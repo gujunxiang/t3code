@@ -8921,7 +8921,6 @@
   "f0e853acd2006d53": "Ambientes vinculados",
   "ef10c2dff987f3ea": "Execute workflows de várias etapas a partir de arquivos na pasta workflows da pasta T3 deste servidor. Abra-os pela paleta de comandos. Enquanto estiver desativado, nada dessa pasta é executado; as execuções aguardam até que seja ativado novamente.",
   "2dadb2359422121c": "Workflows",
-  "13e86eb5d8287a71": "Mostra uma próxima mensagem prevista no editor vazio após um turno do Claude ou do Codex. Tab a usa. Cada uma é uma requisição extra em cache no seu plano. Requer Codex 0.165+. As threads do Claude são atualizadas ao reiniciar.",
   "d4b2a2ec812aafb0": "Sugerir próximo prompt",
   "298c7150a7621c80": "Hosts de dispositivos Simlock",
   "67937aa49179285e": "No Mac, clona novos worktrees a partir de um checkout em cache na pasta T3 home em vez de gravar cada arquivo. Usa o checkout normal do Git quando não consegue. Desativar exclui o cache.",
@@ -12980,5 +12979,6 @@
   "201490988858b511": "retirada por {by}",
   "99451a5d2d40440f": "Retirada por {by}.",
   "3ee30a50b70fffab": "Retirada por {by}: {reason}",
-  "92e129bf413a1220": "retirada"
+  "92e129bf413a1220": "retirada",
+  "13d47e7a25f93822": "Mostra uma previsão da próxima mensagem no campo vazio após um turno concluído. Pressione Tab para usar. Claude e Codex usam sugestões nativas (Codex 0.165+; threads do Claude atualizam ao reiniciar); outros provedores usam seu modelo de geração de texto."
 }
